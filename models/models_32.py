@@ -1,5 +1,3 @@
-# model definition from https://github.com/TAMU-VITA/AutoGAN
-
 import torch
 from torch import nn
 import torch.nn.functional as F

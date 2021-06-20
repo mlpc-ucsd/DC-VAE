@@ -66,5 +66,5 @@ dependencies:
   - pip:
     - lmdb==0.98
     - scipy==1.3.3
-prefix: /home/mlpc/anaconda3/envs/dcvae_env
+prefix: ~/anaconda3/envs/dcvae_env
 
