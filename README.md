@@ -38,11 +38,13 @@ A generative autoencoder model with dual contradistinctive losses to improve gen
 If you find this project useful for your research, please cite the following work.
 
 ```
-@InProceedings{parmar2020dual,
- author   = {Parmar, Gaurav and Li, Dacheng and Lee, Kwonjoon and Tu, Zhuowen},
- booktitle =CVPR,
- title    = {Dual Contradistinctive Generative Autoencoder},
- year     = {2021},
+@InProceedings{Parmar_2021_CVPR,
+    author    = {Parmar, Gaurav and Li, Dacheng and Lee, Kwonjoon and Tu, Zhuowen},
+    title     = {Dual Contradistinctive Generative Autoencoder},
+    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+    month     = {June},
+    year      = {2021},
+    pages     = {823-832}
 }
 ```
 
@@ -62,17 +64,3 @@ We found the following libraries helpful in our research.
 This work is funded by NSF IIS- 1717431 and NSF IIS-1618477. We thank Qualcomm Inc. for an award support. The work was performed when G. Parmar and D. Li were with UC San Diego.
 
 ---
-
-
-<!-- ## Setup conda environment
- - `conda env create -f dcvae_env.yml`
- - `conda activate dcvae_env`
-
-## CIFAR-10 training code
- - `python train.py`
-
-## Acknowledgement
- - `https://github.com/mseitzer/pytorch-fid/`
- - `https://github.com/openai/improved-gan/tree/master/inception_score`
- - `https://github.com/TAMU-VITA/AutoGAN`
- -  -->
