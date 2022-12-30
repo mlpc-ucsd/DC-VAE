@@ -51,14 +51,23 @@ fix_seed(random_seed=seed)
 #############################
 encoder = torch.nn.DataParallel(Encoder(latent_dim)).cuda()
 decoder = torch.nn.DataParallel(Decoder(latent_dim)).cuda()
-dual_encoder = torch.nn.DataParallel(DualEncoder(cont_dim)).cuda()
+
+autoencoder = torch.nn.DataParallel(AutoEncoder(latent_dim)).cuda()
+autoencoder.apply(weights_init)
+
 encoder.apply(weights_init)
 decoder.apply(weights_init)
+
+
+"""
+dual_encoder = torch.nn.DataParallel(DualEncoder(cont_dim)).cuda() 
 dual_encoder.apply(weights_init)
 dual_encoder_M = torch.nn.DataParallel(DualEncoder(cont_dim)).cuda()
 for p, p_momentum in zip(dual_encoder.parameters(), dual_encoder_M.parameters()):
     p_momentum.data.copy_(p.data)
     p_momentum.requires_grad = False
+"""
+
 gen_avg_param = copy_params(decoder)
 d_queue, d_queue_ptr = {}, {}
 for layer in layers:
@@ -70,12 +79,17 @@ for layer in layers:
 #############################
 # Make the optimizers
 #############################
+opt_autoencoder = torch.optim.Adam(filter(lambda p: p.requires_grad,
+                                        autoencoder.parameters()),
+                                lr, (beta1, beta2))
+
 opt_encoder = torch.optim.Adam(filter(lambda p: p.requires_grad, 
                                         encoder.parameters()),
                                 lr, (beta1, beta2))
 opt_decoder = torch.optim.Adam(filter(lambda p: p.requires_grad, 
                                         decoder.parameters()),
                                 lr, (beta1, beta2))
+"""
 shared_params = list(dual_encoder.module.block1.parameters()) + \
                 list(dual_encoder.module.block2.parameters()) + \
                 list(dual_encoder.module.block3.parameters()) + \
@@ -94,6 +108,7 @@ cont_params = list(dual_encoder.module.head_b1.parameters()) + \
 opt_cont_head = torch.optim.Adam(filter(lambda p: p.requires_grad, cont_params),
                     lr, (beta1, beta2))
 
+"""
 #############################
 # Make the dataloaders
 #############################
@@ -123,12 +138,42 @@ global_steps = 0
 for epoch in tqdm(range(max_epoch), desc='total progress'):
     encoder.train()
     decoder.train()
-    dual_encoder.train()
+    #dual_encoder.train()
+    #autoencoder.train()
     for iter_idx, (imgs, _) in enumerate(tqdm(train_loader)):
         curr_bs = imgs.shape[0]
         curr_log = f"{epoch}:{iter_idx}\t"
         real_imgs = imgs.type(torch.cuda.FloatTensor)
         z = torch.cuda.FloatTensor(np.random.normal(0, 1, (imgs.shape[0], latent_dim)))
+
+        # encoder decoder training
+        opt_decoder.zero_grad()
+        opt_encoder.zero_grad()
+        bs, imsize = imgs.shape[0], imgs.shape[2]
+        mu_logvar = encoder(imgs).view(bs, -1)
+        mu = mu_logvar[:,0:latent_dim]
+        logvar = mu_logvar[:,latent_dim:]
+        std = torch.exp(0.5*logvar)
+        eps = torch.randn_like(std)
+        z0 = mu + eps*std
+        z0 = torch.clamp(z0, min=-1.0, max=1.0)
+        x_recon = decoder(z0).view(bs,3,imsize,imsize)        
+        recon_loss = torch.mean((x_recon - real_imgs)**2)
+        recon_loss.backward()
+        opt_decoder.step()
+        opt_encoder.step()
+
+
+        """
+        # train autoencoder
+        opt_autoencoder.zero_grad()
+        recon_imgs = autoencoder(imgs)
+        recon_loss = torch.mean(torch.abs(recon_imgs - imgs))
+        #recon_loss = torch.mean((recon_imgs - imgs)**2)
+        recon_loss.backward()
+        opt_autoencoder.step()
+
+
         # ---------------------
         #  Train Discriminator
         # ---------------------
@@ -147,6 +192,8 @@ for epoch in tqdm(range(max_epoch), desc='total progress'):
         curr_log += f"d:{d_loss.item():.2f}\t"
         opt_shared.step()
         opt_disc_head.step()
+
+        
 
         # -----------------
         #  Train Generator
@@ -216,14 +263,18 @@ for epoch in tqdm(range(max_epoch), desc='total progress'):
             for p, avg_p in zip(decoder.parameters(), gen_avg_param):
                 avg_p.mul_(0.999).add_(0.001, p.data)
         
+        """
+
+    # no need to modify from here on
         if global_steps%250 == 0:
             print_and_save(curr_log, log_fname)
-            viz_img = im_k[0:8].view(8,3,32,32)
-            viz_rec = im_q[0:].view(curr_bs,3,32,32)
+            viz_img = real_imgs[0:8].view(8,3,32,32)
+            viz_rec = x_recon[0:8].view(8,3,32,32)
             out = torch.cat((viz_img, viz_rec), dim=0)
-            fname = os.path.join(viz_dir, f"{global_steps}_recon.png")
+            fname = os.path.join(viz_dir, f"{global_steps}_recon_vanilla.png")
             disp_images(out, fname, 8, norm="0.5")
-            fname = os.path.join(viz_dir, f"{global_steps}_sample.png")
+            fname = os.path.join(viz_dir, f"{global_steps}_sample_vanilla.png")
+            fake_imgs = decoder(z).detach()
             disp_images(fake_imgs.view(-1,3,32,32), fname, 8, norm="0.5")
         
         global_steps += 1
@@ -231,19 +282,21 @@ for epoch in tqdm(range(max_epoch), desc='total progress'):
     if epoch % 5 == 0:
         decoder.eval()
         encoder.eval()
+
         backup_param = copy_params(decoder)
         load_params(decoder, gen_avg_param)
         fid_sample = compute_fid_sample(decoder, latent_dim)
         fid_recon = compute_fid_recon(encoder, decoder, test_loader, latent_dim)
         S = f"epoch:{epoch} sample:{fid_sample} recon:{fid_recon}"
         print_and_save(S, fid_fname)
+        """
         # save checkpoints
         torch.save(encoder.state_dict(), os.path.join(models_dir, f"{epoch}_encoder.sd"))
         torch.save(decoder.state_dict(), os.path.join(models_dir, f"{epoch}_decoder_avg.sd"))
         load_params(decoder, backup_param)
         torch.save(decoder.state_dict(), os.path.join(models_dir, f"{epoch}_decoder.sd"))
-        torch.save(dual_encoder.state_dict(), os.path.join(models_dir, f"{epoch}_dual_encoder.sd"))
-        torch.save(dual_encoder_M.state_dict(), os.path.join(models_dir, f"{epoch}_dual_encoder_M.sd"))
+        #torch.save(dual_encoder.state_dict(), os.path.join(models_dir, f"{epoch}_dual_encoder.sd"))
+        #torch.save(dual_encoder_M.state_dict(), os.path.join(models_dir, f"{epoch}_dual_encoder_M.sd"))
         torch.save(opt_encoder.state_dict(), os.path.join(models_dir, f"{epoch}_opt_encoder.sd"))
         torch.save(opt_decoder.state_dict(), os.path.join(models_dir, f"{epoch}_opt_decoder.sd"))
         torch.save(opt_shared.state_dict(), os.path.join(models_dir, f"{epoch}_opt_shared.sd"))
@@ -252,5 +305,6 @@ for epoch in tqdm(range(max_epoch), desc='total progress'):
         for layer in layers:
             torch.save(d_queue[layer], os.path.join(models_dir, f"{epoch}_{layer}_queue.sd"))
             torch.save(d_queue_ptr[layer], os.path.join(models_dir, f"{epoch}_{layer}_queueptr.sd"))
+        """
         encoder.train()
         decoder.train()
