@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+from utils.misc import *
+from utils.eval import *
 
 UP_MODES = ['nearest', 'bilinear']
 NORMS = ['in', 'bn']
@@ -323,3 +325,23 @@ class Encoder(nn.Module):
         output = self.l5(h)
         return output
 
+# here we implement a simple autoencoder taking images, passing through encoder and decoder and then reconstructing the image
+class AutoEncoder(nn.Module):
+    def __init__(self, zdim, activation=nn.ReLU()):
+        super(AutoEncoder, self).__init__()
+        self.encoder = Encoder(zdim, activation=activation)
+        self.decoder = Decoder(zdim)
+        self.zdim = zdim
+
+    def forward(self, x):
+        bs, imsize = x.shape[0], x.shape[2]
+        mu_logvar = self.encoder(x).view(bs, -1)
+        mu = mu_logvar[:,0:self.zdim]
+        logvar = mu_logvar[:,self.zdim:]
+        std = torch.exp(0.5*logvar)
+        eps = torch.randn_like(std)
+        z = mu + eps*std
+        z = torch.clamp(z, min=-1.0, max=1.0)
+        x_recon = self.decoder(z).view(bs,3,imsize,imsize)
+        
+        return x_recon
